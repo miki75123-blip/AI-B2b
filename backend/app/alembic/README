@@ -1,0 +1,24 @@
+# Alembic 資料庫遷移
+
+本目錄包含 SQLAlchemy 模型的遷移腳本。
+
+## 使用方法
+
+```bash
+# 創建新遷移
+alembic revision --autogenerate -m "描述"
+
+# 應用遷移
+alembic upgrade head
+
+# 回滾
+alembic downgrade -1
+```
+
+## 遷移歷史
+
+| 版本 | 描述 |
+|------|------|
+| 001 | 初始遷移 - 用戶和認證 |
+| 002 | 供應商和活動模型 |
+| 003 | 郵件和日誌模型 |

@@ -1,0 +1,43 @@
+# AI LeadGen Agent - 後端依賴（Python 3.14 兼容版）
+
+# Web 框架
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.20
+
+# 數據庫
+sqlalchemy>=2.0.36
+alembic>=1.15.0
+
+# Pydantic & Settings
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+python-dotenv>=1.0.1
+
+# 認證
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# OpenAI
+openai>=1.57.0
+
+# 爬蟲（核心包，無需 C 擴展）
+beautifulsoup4>=4.13.0
+httpx>=0.28.0
+lxml>=5.3.0  # 嘗試使用最新的
+
+# 工具庫
+requests>=2.32.0
+aiofiles>=24.1.0
+python-dateutil>=2.9.0
+tenacity>=9.0.0
+loguru>=0.7.3
+
+# 驗證
+email-validator>=2.2.0
+
+# 測試
+pytest>=8.3.0
+pytest-asyncio>=0.25.0
+pytest-cov>=6.0.0
+httpx>=0.28.0
