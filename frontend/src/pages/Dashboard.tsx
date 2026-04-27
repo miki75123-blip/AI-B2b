@@ -100,7 +100,7 @@ export function Dashboard() {
           title="活動數量"
           value={dashboard?.campaign_stats.active || 0}
           icon={Mail}
-          suffix=" / " + (dashboard?.campaign_stats.total || 0)
+          suffix={` / ${dashboard?.campaign_stats.total || 0}`}
         />
       </div>
 
