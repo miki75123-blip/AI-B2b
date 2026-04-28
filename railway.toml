@@ -1,0 +1,17 @@
+# AI LeadGen Agent - Railway 部署配置
+# 這個文件告訴 Railway 如何部署我們的後端
+
+[build]
+# 使用 Docker 構建
+builder = "docker"
+dockerfilePath = "docker/Dockerfile.backend"
+
+[deploy]
+# 部署完成後的啟動命令
+# Railway 會自動設置 $PORT 環境變量
+startCommand = "cd backend && uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"
+
+[environments]
+# 生產環境配置
+[environments.production]
+# 繼承上面的配置
