@@ -1,9 +1,0 @@
-# AI LeadGen Agent - Railway 部署配置
-
-[build]
-builder = "docker"
-dockerfilePath = "docker/Dockerfile.backend"
-
-[deploy]
-# 使用固定端口 8000
-startCommand = "cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000"
