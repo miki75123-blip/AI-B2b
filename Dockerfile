@@ -16,5 +16,5 @@ COPY backend/ .
 # 暴露端口
 EXPOSE 8000
 
-# 啟動命令
+# 啟動命令 - 使用 shell 形式讓 $PORT 正確展開
 CMD uvicorn app.main:app --host 0.0.0.0 --port $PORT
