@@ -3,3 +3,4 @@ builder = "nixpacks"
 
 [deploy]
 startCommand = "bash start.sh"
+# Updated: force rebuild
