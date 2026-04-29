@@ -5,10 +5,20 @@ from celery import Celery
 from app.core.config import settings
 
 # 創建 Celery 應用
+# 如果設置了 UPSTASH，則使用 Upstash Redis
+if settings.UPSTASH_REDIS_REST_URL and settings.UPSTASH_REDIS_REST_TOKEN:
+    # 使用 Upstash Redis (需要配置 broker 和 backend)
+    # Upstash 提供標准 Redis 兼容接口
+    broker_url = f"redis://:{settings.UPSTASH_REDIS_REST_TOKEN}@{settings.UPSTASH_REDIS_REST_URL.replace('https://', '')}"
+    result_backend = broker_url
+else:
+    broker_url = settings.CELERY_BROKER_URL
+    result_backend = settings.CELERY_RESULT_BACKEND
+
 celery_app = Celery(
     "ai_leadgen",
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND,
+    broker=broker_url,
+    backend=result_backend,
     include=[
         "app.tasks.scraper_tasks",
         "app.tasks.email_tasks",

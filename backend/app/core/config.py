@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/0")
     CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/0")
     
+    # Upstash Redis (可选 - 用于云 Redis)
+    UPSTASH_REDIS_REST_URL: str = Field(default="")
+    UPSTASH_REDIS_REST_TOKEN: str = Field(default="")
+    
     # OpenAI
     OPENAI_API_KEY: str = Field(default="")
     OPENAI_MODEL: str = Field(default="gpt-4")
