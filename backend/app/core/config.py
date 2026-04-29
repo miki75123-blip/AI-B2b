@@ -32,13 +32,17 @@ class Settings(BaseSettings):
     UPSTASH_REDIS_REST_URL: str = Field(default="")
     UPSTASH_REDIS_REST_TOKEN: str = Field(default="")
     
-    # OpenAI
-    OPENAI_API_KEY: str = Field(default="")
-    OPENAI_MODEL: str = Field(default="gpt-4")
+    # Cohere AI (用于生成邮件)
+    COHERE_API_KEY: str = Field(default="")
+    COHERE_MODEL: str = Field(default="command")
     
-    # SendGrid
-    SENDGRID_API_KEY: str = Field(default="")
-    SENDGRID_FROM_EMAIL: str = Field(default="noreply@example.com")
+    # Google Search API (企业搜索)
+    GOOGLE_SEARCH_API_KEY: str = Field(default="")
+    GOOGLE_SEARCH_ENGINE_ID: str = Field(default="")
+    
+    # Resend (邮件发送 - 免费替代 SendGrid)
+    RESEND_API_KEY: str = Field(default="")
+    RESEND_FROM_EMAIL: str = Field(default="noreply@example.com")
     
     # 爬蟲配置
     SCRAPER_USER_AGENT: str = Field(

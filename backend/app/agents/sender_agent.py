@@ -1,13 +1,14 @@
 """
 Sender Agent - 郵件發送代理
 負責郵件發送、退訂處理和追蹤
+使用 Resend API（免費 3000 封/月）
 """
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Email, To, Content, TrackingSettings, ClickTracking
+import resend
 from loguru import logger
+from app.core.config import settings
 from app.models.email import Email as EmailModel, EmailStatus
 from app.models.supplier import Supplier
 
@@ -19,30 +20,10 @@ class SenderAgent:
         self.user_id = user_id
         self.db = db
     
-    def _create_sendgrid_client(self, api_key: str) -> Optional[SendGridAPIClient]:
-        """
-        創建 SendGrid 客戶端
-        
-        Args:
-            api_key: SendGrid API Key
-            
-        Returns:
-            SendGridAPIClient 或 None
-        """
-        if not api_key:
-            logger.error("SendGrid API key not provided")
-            return None
-        
-        try:
-            return SendGridAPIClient(api_key)
-        except Exception as e:
-            logger.error(f"Error creating SendGrid client: {str(e)}")
-            return None
-    
     def send_email(
         self,
         email_record: EmailModel,
-        sendgrid_api_key: str,
+        resend_api_key: str,
         from_email: str,
         from_name: str
     ) -> Dict[str, Any]:
@@ -51,48 +32,42 @@ class SenderAgent:
         
         Args:
             email_record: 郵件記錄
-            sendgrid_api_key: SendGrid API Key
+            resend_api_key: Resend API Key
             from_email: 發件人郵箱
             from_name: 發件人名稱
             
         Returns:
             發送結果
         """
-        client = self._create_sendgrid_client(sendgrid_api_key)
-        if not client:
+        if not resend_api_key:
+            logger.error("Resend API key not provided")
             return {
                 "success": False,
-                "error": "Failed to create SendGrid client"
+                "error": "No Resend API key provided"
             }
         
         try:
-            # 創建郵件
-            message = Mail(
-                from_email=Email(from_email, from_name),
-                to_emails=To(email_record.to_email),
-                subject=email_record.subject,
-                html_content=Content("text/html", email_record.body_html or "")
-            )
-            
-            # 添加追蹤設置
-            tracking_settings = TrackingSettings()
-            tracking_settings.enable_click_tracking = ClickTracking(True, True)
-            message.tracking_settings = tracking_settings
+            # 配置 Resend
+            resend.api_key = resend_api_key
             
             # 發送郵件
-            response = client.send(message)
+            params = {
+                "from": f"{from_name} <{from_email}>",
+                "to": email_record.to_email,
+                "subject": email_record.subject,
+                "html": email_record.body_html or ""
+            }
             
-            # 提取消息 ID
-            message_id = None
-            if response.headers:
-                message_id = response.headers.get("X-Message-Id", "")
+            response = resend.Emails.send(params)
+            
+            message_id = response.get("id", "")
             
             logger.info(f"Email sent to {email_record.to_email}, message_id: {message_id}")
             
             return {
                 "success": True,
                 "message_id": message_id,
-                "status_code": response.status_code
+                "provider": "resend"
             }
             
         except Exception as e:
@@ -105,7 +80,7 @@ class SenderAgent:
     def send_batch(
         self,
         emails: List[EmailModel],
-        sendgrid_api_key: str,
+        resend_api_key: str,
         from_email: str,
         from_name: str
     ) -> Dict[str, Any]:
@@ -114,22 +89,13 @@ class SenderAgent:
         
         Args:
             emails: 郵件列表
-            sendgrid_api_key: SendGrid API Key
+            resend_api_key: Resend API Key
             from_email: 發件人郵箱
             from_name: 發件人名稱
             
         Returns:
             批量發送結果
         """
-        client = self._create_sendgrid_client(sendgrid_api_key)
-        if not client:
-            return {
-                "success": False,
-                "error": "Failed to create SendGrid client",
-                "sent": 0,
-                "failed": len(emails)
-            }
-        
         sent = 0
         failed = 0
         errors = []
@@ -138,7 +104,7 @@ class SenderAgent:
             try:
                 result = self.send_email(
                     email_record=email_record,
-                    sendgrid_api_key=sendgrid_api_key,
+                    resend_api_key=resend_api_key,
                     from_email=from_email,
                     from_name=from_name
                 )
@@ -169,7 +135,7 @@ class SenderAgent:
     
     def process_webhook(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        處理 SendGrid Webhook 事件
+        處理 Resend Webhook 事件
         
         Args:
             event_data: Webhook 事件數據
@@ -177,43 +143,39 @@ class SenderAgent:
         Returns:
             處理結果
         """
-        event_type = event_data.get("event", "")
-        message_id = event_data.get("sg_message_id", "")
-        email = event_data.get("email", "")
+        event_type = event_data.get("type", "")
+        email_id = event_data.get("data", {}).get("email_id", "")
+        email = event_data.get("data", {}).get("to", "")
         
         # 查找郵件記錄
         email_record = self.db.query(EmailModel).filter(
-            EmailModel.sendgrid_message_id.contains(message_id.split(".")[0])
+            EmailModel.provider_message_id == email_id
         ).first()
         
         if not email_record:
-            logger.warning(f"Email not found for message_id: {message_id}")
+            logger.warning(f"Email not found for email_id: {email_id}")
             return {"error": "Email not found"}
         
         # 更新郵件狀態
-        if event_type == "delivered":
+        if event_type == "email.delivered" or event_type == "delivered":
             email_record.status = EmailStatus.DELIVERED
             email_record.delivered_at = datetime.utcnow()
             
-        elif event_type == "open":
+        elif event_type == "email.opened" or event_type == "opened":
             if email_record.status not in [EmailStatus.OPENED, EmailStatus.CLICKED]:
                 email_record.status = EmailStatus.OPENED
             email_record.opened_at = datetime.utcnow()
             email_record.open_count += 1
             
-        elif event_type == "click":
+        elif event_type == "email.clicked" or event_type == "clicked":
             email_record.status = EmailStatus.CLICKED
             email_record.clicked_at = datetime.utcnow()
             email_record.click_count += 1
             
-        elif event_type == "bounce":
+        elif event_type == "email.bounced" or event_type == "bounced":
             email_record.status = EmailStatus.BOUNCED
             
-        elif event_type == "dropped":
-            email_record.status = EmailStatus.BOUNCED
-            email_record.error_message = event_data.get("reason", "Dropped")
-            
-        elif event_type == "unsubscribe":
+        elif event_type == "email.unsubscribed" or event_type == "unsubscribed":
             email_record.status = EmailStatus.UNSUBSCRIBED
             # 將供應商加入黑名單
             if email_record.supplier_id:
@@ -222,10 +184,6 @@ class SenderAgent:
                 ).first()
                 if supplier:
                     supplier.is_blacklisted = True
-        
-        elif event_type == "spamreport":
-            email_record.status = EmailStatus.FAILED
-            email_record.error_message = "Marked as spam"
         
         self.db.commit()
         
@@ -245,8 +203,8 @@ class SenderAgent:
         Returns:
             預熱結果
         """
-        if not user.sendgrid_api_key:
-            return {"success": False, "error": "No SendGrid API key"}
+        if not user.resend_api_key:
+            return {"success": False, "error": "No Resend API key"}
         
         # 預熱策略：
         # 1. 逐漸增加發送量
@@ -288,7 +246,7 @@ class SenderAgent:
         
         bounce_rate = (total_bounced / total_sent * 100) if total_sent > 0 else 0
         
-        # SendGrid 建議退信率保持在 2% 以下
+        # Resend 建議退信率保持在 2% 以下
         risk_level = "low"
         if bounce_rate > 5:
             risk_level = "high"
@@ -318,8 +276,7 @@ class SenderAgent:
             "high": [
                 "立即暫停大量發送",
                 "清理所有無效郵箱",
-                "檢查發送的郵件內容",
-                "聯繫 SendGrid 支持"
+                "檢查發送的郵件內容"
             ]
         }
         return recommendations.get(risk_level, [])
@@ -335,8 +292,6 @@ class SenderAgent:
         Returns:
             操作結果
         """
-        # 這需要 SendGrid API 支持
-        # 可以通過抑制組管理實現
         return {
             "success": True,
             "email": email,

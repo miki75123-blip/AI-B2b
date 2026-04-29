@@ -6,7 +6,7 @@ import os
 import json
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
-from openai import OpenAI
+import cohere
 from loguru import logger
 from app.core.config import settings
 from app.models.supplier import Supplier
@@ -21,8 +21,8 @@ class WriterAgent:
     def __init__(self, user_id: int, db: Session):
         self.user_id = user_id
         self.db = db
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
-        self.model = settings.OPENAI_MODEL
+        self.cohere_client = cohere.Client(settings.COHERE_API_KEY) if settings.COHERE_API_KEY else None
+        self.model = settings.COHERE_MODEL
     
     def _get_system_prompt(self) -> str:
         """獲取系統提示詞"""
@@ -172,7 +172,7 @@ class WriterAgent:
         Returns:
             個性化後的郵件或 None
         """
-        if not self.client:
+        if not self.cohere_client:
             return None
         
         try:
@@ -190,11 +190,7 @@ class WriterAgent:
 基礎正文: {base_body[:500]}
 """
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self._get_system_prompt()},
-                    {"role": "user", "content": f"""請根據以下供應商資訊，優化並個性化以下郵件：
+            prompt = f"""你是一個專業的 B2B 銷售郵件撰寫專家。請根據以下供應商資訊，優化並個性化以下郵件：
 
 {context}
 
@@ -209,23 +205,24 @@ class WriterAgent:
     "subject": "優化後的主題行",
     "body": "優化後的 HTML 正文"
 }}
-"""}
-                ],
-                temperature=0.8,
-                max_tokens=1000
+"""
+            
+            response = self.cohere_client.generate(
+                model=self.model,
+                prompt=prompt,
+                max_tokens=1000,
+                temperature=0.8
             )
             
-            content = response.choices[0].message.content
+            content = response.generations[0].text
             
             # 解析 JSON 回應
-            # 嘗試提取 JSON 部分
             import re
             json_match = re.search(r'\{[^{}]*"subject"[^{}]*"body"[^{}]*\}', content, re.DOTALL)
             if json_match:
                 email_data = json.loads(json_match.group())
                 
                 # 生成純文本版本
-                import re
                 body_text = re.sub(r'<[^>]+>', '', email_data.get("body", ""))
                 body_text = re.sub(r'\s+', ' ', body_text).strip()
                 
@@ -238,7 +235,7 @@ class WriterAgent:
             return None
             
         except Exception as e:
-            logger.error(f"Error generating with AI: {str(e)}")
+            logger.error(f"Error generating with Cohere AI: {str(e)}")
             return None
     
     def generate_ab_variant(
@@ -256,18 +253,14 @@ class WriterAgent:
         Returns:
             B 變體的 subject 和 body
         """
-        if not self.client:
+        if not self.cohere_client:
             return {
                 "subject": template.variant_b_subject or template.subject_template,
                 "body": template.variant_b_body or template.body_template
             }
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "你是一個專業的 A/B 測試郵件撰寫專家。"},
-                    {"role": "user", "content": f"""請為以下郵件創建一個 A/B 測試變體：
+            prompt = f"""請為以下郵件創建一個 A/B 測試變體：
 
 原始主題: {template.subject_template}
 原始正文: {template.body_template[:500]}
@@ -284,13 +277,16 @@ class WriterAgent:
     "subject": "變體 B 的主題行",
     "body": "變體 B 的 HTML 正文"
 }}
-"""}
-                ],
-                temperature=0.9,
-                max_tokens=800
+"""
+            
+            response = self.cohere_client.generate(
+                model=self.model,
+                prompt=prompt,
+                max_tokens=800,
+                temperature=0.9
             )
             
-            content = response.choices[0].message.content
+            content = response.generations[0].text
             
             import re
             json_match = re.search(r'\{[^{}]*"subject"[^{}]*"body"[^{}]*\}', content, re.DOTALL)
@@ -315,7 +311,7 @@ class WriterAgent:
         Returns:
             分析結果
         """
-        if not self.client:
+        if not self.cohere_client:
             return {
                 "category": None,
                 "keywords": [],
@@ -324,11 +320,7 @@ class WriterAgent:
             }
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "你是一個專業的 B2B 市場分析師。"},
-                    {"role": "user", "content": f"""請分析以下產品描述：
+            prompt = f"""請分析以下產品描述：
 
 {product_description}
 
@@ -339,13 +331,16 @@ class WriterAgent:
     "value_proposition": "價值主張",
     "target_audience": "目標受眾描述"
 }}
-"""}
-                ],
-                temperature=0.5,
-                max_tokens=500
+"""
+            
+            response = self.cohere_client.generate(
+                model=self.model,
+                prompt=prompt,
+                max_tokens=500,
+                temperature=0.5
             )
             
-            content = response.choices[0].message.content
+            content = response.generations[0].text
             
             import re
             json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
@@ -377,15 +372,11 @@ class WriterAgent:
         Returns:
             主題行列表
         """
-        if not self.client:
+        if not self.cohere_client:
             return [base_subject]
         
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "你是一個專業的郵件主題行撰寫專家。"},
-                    {"role": "user", "content": f"""請為以下郵件生成 3 個不同風格的主題行：
+            prompt = f"""請為以下郵件生成 3 個不同風格的主題行：
 
 目標公司: {supplier.company_name}
 國家: {supplier.country}
@@ -401,13 +392,16 @@ class WriterAgent:
 {{
     "subjects": ["主題1", "主題2", "主題3"]
 }}
-"""}
-                ],
-                temperature=0.8,
-                max_tokens=300
+"""
+            
+            response = self.cohere_client.generate(
+                model=self.model,
+                prompt=prompt,
+                max_tokens=300,
+                temperature=0.8
             )
             
-            content = response.choices[0].message.content
+            content = response.generations[0].text
             
             import re
             json_match = re.search(r'\[[^\]]*\]', content)

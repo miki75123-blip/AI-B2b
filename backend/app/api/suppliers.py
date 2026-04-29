@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from typing import Optional, List
+from pydantic import BaseModel
 from app.core.database import get_db
 from app.models.user import User
 from app.models.supplier import Supplier, SourcePlatform, VerificationStatus
@@ -14,6 +15,7 @@ from app.schemas.supplier import (
 )
 from app.api.auth import get_current_user
 from app.tasks.scraper_tasks import scrape_suppliers_task
+from app.services.google_search_service import google_search_service
 import csv
 import io
 
@@ -321,6 +323,91 @@ def start_scraping(
         "message": "爬蟲任務已啟動",
         "task_id": task.id,
         "platform": platform.value
+    }
+
+
+class SearchQuery(BaseModel):
+    """搜索請求模型"""
+    query: str
+    country: Optional[str] = None  # UK, Canada, Sweden, Norway, Denmark, Finland
+    region: Optional[str] = "all"   # all, uk, canada, nordic
+    limit: int = 10
+
+
+@router.post("/search-google")
+def search_google_companies(
+    search_data: SearchQuery,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    使用 Google 搜索企業
+    
+    支持的國家/地區：
+    - UK, United Kingdom
+    - Canada
+    - Sweden, Norway, Denmark, Finland
+    - 或自定義 country
+    """
+    results = []
+    
+    # 根據區域設置國家
+    country = search_data.country
+    if search_data.region == "uk" and not country:
+        country = "UK"
+    elif search_data.region == "canada" and not country:
+        country = "Canada"
+    elif search_data.region == "nordic" and not country:
+        # 搜索所有北歐國家
+        results = google_search_service.search_nordic_companies(
+            query=search_data.query,
+            limit=search_data.limit
+        )
+    elif search_data.region == "all" and not country:
+        # 搜索所有支持的地區
+        regions = ["UK", "Canada", "Sweden", "Norway", "Denmark", "Finland"]
+        all_results = []
+        for r in regions:
+            r_results = google_search_service.search_companies(
+                query=search_data.query,
+                country=r,
+                limit=search_data.limit
+            )
+            all_results.extend(r_results)
+        
+        # 去重
+        seen_links = set()
+        for result in all_results:
+            if result["link"] not in seen_links:
+                seen_links.add(result["link"])
+                results.append(result)
+        
+        results = results[:search_data.limit]
+    else:
+        # 自定義搜索
+        results = google_search_service.search_companies(
+            query=search_data.query,
+            country=country,
+            limit=search_data.limit
+        )
+    
+    # 記錄活動
+    log = ActivityLog(
+        user_id=current_user.id,
+        activity_type=ActivityType.SUPPLIER_SCRAPED,
+        title="Google 企業搜索",
+        description=f"搜索 '{search_data.query}' 在 {country or search_data.region} 地區",
+        metadata={"query": search_data.query, "country": country, "results_count": len(results)},
+        success=True,
+    )
+    db.add(log)
+    db.commit()
+    
+    return {
+        "query": search_data.query,
+        "country": country or search_data.region,
+        "results_count": len(results),
+        "results": results
     }
 
 
