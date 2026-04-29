@@ -6,13 +6,20 @@ import asyncio
 import httpx
 from typing import List, Dict, Optional, Any
 from sqlalchemy.orm import Session
-from playwright.async_api import async_playwright
 from bs4 import BeautifulSoup
 from loguru import logger
 from app.core.config import settings
 from app.models.supplier import Supplier, SourcePlatform, VerificationStatus
 import re
 from urllib.parse import urljoin
+
+# 可選依賴：Playwright（如果未安裝則回退到 HTTP 客戶端）
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    logger.warning("Playwright not installed, using HTTP client only")
 
 
 class ScoutAgent:
@@ -31,7 +38,8 @@ class ScoutAgent:
     
     async def _fetch_with_browser(self, url: str) -> Optional[str]:
         """
-        使用瀏覽器獲取頁面內容
+        使用瀏覽器獲取頁面內容（如果 Playwright 可用）
+        否則回退到 HTTP 客戶端
         
         Args:
             url: 頁面 URL
@@ -39,20 +47,28 @@ class ScoutAgent:
         Returns:
             HTML 內容或 None
         """
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            
-            try:
-                await page.goto(url, wait_until="networkidle", timeout=30000)
-                await asyncio.sleep(settings.SCRAPER_DELAY_SECONDS)
-                content = await page.content()
-                return content
-            except Exception as e:
-                logger.error(f"Error fetching {url}: {str(e)}")
-                return None
-            finally:
-                await browser.close()
+        # 如果 Playwright 不可用，回退到 HTTP 客戶端
+        if not PLAYWRIGHT_AVAILABLE:
+            return await self._fetch_with_client(url)
+        
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page()
+                
+                try:
+                    await page.goto(url, wait_until="networkidle", timeout=30000)
+                    await asyncio.sleep(settings.SCRAPER_DELAY_SECONDS)
+                    content = await page.content()
+                    return content
+                except Exception as e:
+                    logger.error(f"Error fetching {url}: {str(e)}")
+                    return None
+                finally:
+                    await browser.close()
+        except Exception as e:
+            logger.error(f"Playwright error, falling back to HTTP client: {str(e)}")
+            return await self._fetch_with_client(url)
     
     async def _fetch_with_client(self, url: str) -> Optional[str]:
         """

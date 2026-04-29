@@ -25,7 +25,7 @@ cohere>=4.0
 beautifulsoup4>=4.13.0
 httpx>=0.28.0
 lxml>=5.3.0
-playwright>=1.58.0
+# playwright>=1.58.0  # 可選：需要真實瀏覽器爬蟲時安裝
 
 # 工具庫
 requests>=2.32.0
