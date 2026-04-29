@@ -43,11 +43,11 @@ def get_current_user(
     if payload is None:
         raise credentials_exception
     
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    user_id_str: str = payload.get("sub")
+    if user_id_str is None:
         raise credentials_exception
     
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == int(user_id_str)).first()
     if user is None:
         raise credentials_exception
     
@@ -120,7 +120,7 @@ def login(
     
     # 創建訪問令牌
     access_token = create_access_token(
-        data={"sub": user.id},
+        data={"sub": str(user.id)},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     
@@ -141,7 +141,7 @@ def get_me(current_user: User = Depends(get_current_user)):
 def refresh_token(current_user: User = Depends(get_current_user)):
     """刷新令牌"""
     access_token = create_access_token(
-        data={"sub": current_user.id},
+        data={"sub": str(current_user.id)},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     

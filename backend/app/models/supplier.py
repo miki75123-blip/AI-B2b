@@ -54,12 +54,12 @@ class Supplier(Base):
     about_us = Column(Text)
     
     # 來源追蹤
-    source_platform = Column(Enum(SourcePlatform), default=SourcePlatform.MANUAL)
+    source_platform = Column(Enum(SourcePlatform, values_callable=lambda obj: [e.value for e in obj]), default=SourcePlatform.MANUAL)
     source_url = Column(String(1000))
     source_page_title = Column(String(500))
     
     # 驗證狀態
-    verification_status = Column(Enum(VerificationStatus), default=VerificationStatus.PENDING)
+    verification_status = Column(Enum(VerificationStatus, values_callable=lambda obj: [e.value for e in obj]), default=VerificationStatus.PENDING)
     verification_notes = Column(Text)
     verified_at = Column(DateTime, nullable=True)
     
