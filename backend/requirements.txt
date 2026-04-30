@@ -18,8 +18,7 @@ python-dotenv>=1.0.1
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 
-# AI 生成郵件 (Cohere)
-cohere>=4.0
+# AI 生成郵件 (智譜 GLM - 免費額度)
 
 # 爬蟲
 beautifulsoup4>=4.13.0

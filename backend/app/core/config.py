@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     UPSTASH_REDIS_REST_URL: str = Field(default="")
     UPSTASH_REDIS_REST_TOKEN: str = Field(default="")
     
-    # Cohere AI (用于生成邮件)
-    COHERE_API_KEY: str = Field(default="")
-    COHERE_MODEL: str = Field(default="command")
+    # 智譜 AI GLM (用於生成郵件 - 免費額度)
+    ZHIPU_API_KEY: str = Field(default="")
+    ZHIPU_MODEL: str = Field(default="glm-4")
     
     # Google Search API (企业搜索)
     GOOGLE_SEARCH_API_KEY: str = Field(default="")

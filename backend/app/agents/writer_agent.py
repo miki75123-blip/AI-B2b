@@ -1,12 +1,13 @@
 """
 Writer Agent - 郵件撰寫代理
 負責分析產品資訊並生成個性化銷售郵件
+使用智譜 AI GLM
 """
 import os
 import json
+import requests
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
-import cohere
 from loguru import logger
 from app.core.config import settings
 from app.models.supplier import Supplier
@@ -21,8 +22,49 @@ class WriterAgent:
     def __init__(self, user_id: int, db: Session):
         self.user_id = user_id
         self.db = db
-        self.cohere_client = cohere.Client(settings.COHERE_API_KEY) if settings.COHERE_API_KEY else None
-        self.model = settings.COHERE_MODEL
+        self.zhipu_api_key = settings.ZHIPU_API_KEY
+        self.model = settings.ZHIPU_MODEL
+    
+    def _call_zhipu_api(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.8) -> Optional[str]:
+        """
+        調用智譜 AI API
+        
+        Args:
+            prompt: 提示詞
+            max_tokens: 最大 token 數
+            temperature: 創意度
+            
+        Returns:
+            API 回應文本或 None
+        """
+        if not self.zhipu_api_key:
+            logger.warning("ZHIPU_API_KEY not configured")
+            return None
+        
+        try:
+            url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.zhipu_api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": self.model,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "max_tokens": max_tokens,
+                "temperature": temperature
+            }
+            
+            response = requests.post(url, headers=headers, json=data, timeout=60)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"]
+            
+        except Exception as e:
+            logger.error(f"Error calling Zhipu API: {str(e)}")
+            return None
     
     def _get_system_prompt(self) -> str:
         """獲取系統提示詞"""
@@ -140,7 +182,7 @@ class WriterAgent:
         rendered = self._render_template(template, context)
         
         # 如果有 AI 可用，使用 AI 進一步個性化
-        if self.client:
+        if self.zhipu_api_key:
             try:
                 ai_content = self._generate_with_ai(
                     supplier=supplier,
@@ -162,7 +204,7 @@ class WriterAgent:
         base_body: str
     ) -> Optional[Dict[str, str]]:
         """
-        使用 AI 生成個性化郵件
+        使用智譜 AI 生成個性化郵件
         
         Args:
             supplier: 供應商對象
@@ -172,9 +214,6 @@ class WriterAgent:
         Returns:
             個性化後的郵件或 None
         """
-        if not self.cohere_client:
-            return None
-        
         try:
             # 構建提示詞
             context = f"""
@@ -207,14 +246,10 @@ class WriterAgent:
 }}
 """
             
-            response = self.cohere_client.generate(
-                model=self.model,
-                prompt=prompt,
-                max_tokens=1000,
-                temperature=0.8
-            )
+            content = self._call_zhipu_api(prompt, max_tokens=1000, temperature=0.8)
             
-            content = response.generations[0].text
+            if not content:
+                return None
             
             # 解析 JSON 回應
             import re
@@ -235,7 +270,7 @@ class WriterAgent:
             return None
             
         except Exception as e:
-            logger.error(f"Error generating with Cohere AI: {str(e)}")
+            logger.error(f"Error generating with Zhipu AI: {str(e)}")
             return None
     
     def generate_ab_variant(
@@ -253,7 +288,7 @@ class WriterAgent:
         Returns:
             B 變體的 subject 和 body
         """
-        if not self.cohere_client:
+        if not self.zhipu_api_key:
             return {
                 "subject": template.variant_b_subject or template.subject_template,
                 "body": template.variant_b_body or template.body_template
@@ -279,14 +314,13 @@ class WriterAgent:
 }}
 """
             
-            response = self.cohere_client.generate(
-                model=self.model,
-                prompt=prompt,
-                max_tokens=800,
-                temperature=0.9
-            )
+            content = self._call_zhipu_api(prompt, max_tokens=800, temperature=0.9)
             
-            content = response.generations[0].text
+            if not content:
+                return {
+                    "subject": template.variant_b_subject or template.subject_template,
+                    "body": template.variant_b_body or template.body_template
+                }
             
             import re
             json_match = re.search(r'\{[^{}]*"subject"[^{}]*"body"[^{}]*\}', content, re.DOTALL)
@@ -311,7 +345,7 @@ class WriterAgent:
         Returns:
             分析結果
         """
-        if not self.cohere_client:
+        if not self.zhipu_api_key:
             return {
                 "category": None,
                 "keywords": [],
@@ -333,14 +367,15 @@ class WriterAgent:
 }}
 """
             
-            response = self.cohere_client.generate(
-                model=self.model,
-                prompt=prompt,
-                max_tokens=500,
-                temperature=0.5
-            )
+            content = self._call_zhipu_api(prompt, max_tokens=500, temperature=0.5)
             
-            content = response.generations[0].text
+            if not content:
+                return {
+                    "category": None,
+                    "keywords": [],
+                    "value_proposition": None,
+                    "target_audience": None
+                }
             
             import re
             json_match = re.search(r'\{[^{}]*\}', content, re.DOTALL)
@@ -372,7 +407,7 @@ class WriterAgent:
         Returns:
             主題行列表
         """
-        if not self.cohere_client:
+        if not self.zhipu_api_key:
             return [base_subject]
         
         try:
@@ -394,14 +429,10 @@ class WriterAgent:
 }}
 """
             
-            response = self.cohere_client.generate(
-                model=self.model,
-                prompt=prompt,
-                max_tokens=300,
-                temperature=0.8
-            )
+            content = self._call_zhipu_api(prompt, max_tokens=300, temperature=0.8)
             
-            content = response.generations[0].text
+            if not content:
+                return [base_subject]
             
             import re
             json_match = re.search(r'\[[^\]]*\]', content)
