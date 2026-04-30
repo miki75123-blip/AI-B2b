@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ .
 
-EXPOSE 8000
+EXPOSE ${PORT:-8000}
 
-# 使用固定端口，Railway 會自動映射
-CMD uvicorn app.main:app --host 0.0.0.0 --port 8000
+# 使用 Railway 注入的 PORT 环境变量
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

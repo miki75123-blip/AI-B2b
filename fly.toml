@@ -1,0 +1,43 @@
+# AI LeadGen Agent - Fly.io Configuration
+app = "ai-leadgen-agent"
+primary_region = "iad"  # Virginia, USA - 靠近歐美用戶
+
+[build]
+  dockerfile = "Dockerfile.fly"
+
+[deploy]
+  release_command = "python -m alembic upgrade head"
+
+[run]
+  auto_rollback = true
+
+[[services]]
+  internal_port = 8000
+  protocol = "tcp"
+
+  [services.concurrency]
+    hard_limit = 25
+    soft_limit = 20
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.checks]]
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+
+# 監控
+[metrics]
+  port = 9090
+  path = "/metrics"
+
+# 掛載捲（可選 - 用於持久化 SQLite）
+[mounts]
+  source = "data"
+  destination = "/app/data"
